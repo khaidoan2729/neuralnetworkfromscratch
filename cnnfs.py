@@ -2,6 +2,7 @@ import numpy as np
 import cv2 as cv
 import pickle
 import copy
+import os 
 
 
 
@@ -27,7 +28,14 @@ class Convolutional_Layer:
 
             matrix = np.array(padded_hor)
 
-            matrix = np.concatenate((padding_t, matrix, padding_b))
+            if (t == 0 and b > 0): 
+                matrix = np.concatenate((matrix, padding_b))
+            elif (b == 0 and t > 0): 
+                matrix = np.concatenate((padding_t, matrix))
+            elif (t > 0 and b > 0):
+                matrix = np.concatenate((padding_t, matrix, padding_b))
+            else: 
+                matrix = matrix
 
             return matrix
         else: 
@@ -209,8 +217,8 @@ class Convolutional_Layer:
             self.padded_inputs = np.array(padded_input)
 
         for sample_idx in range(self.batch_size):                       # Go through each sample in batch
-            for kernel_idx in range(len(self.kernels)):                 # Go through each kernel in kernel set
-                for channel_idx in range(len(self.padded_inputs)):      # Go through each channel
+            for kernel_idx in range(self.kernel_per_matrix):                 # Go through each kernel in kernel set
+                for channel_idx in range(self.num_channels):      # Go through each channel
                     self.output[sample_idx][kernel_idx] += self.correlate(self.padded_inputs[sample_idx][channel_idx], self.kernels[kernel_idx][channel_idx])
         
                 self.output[sample_idx][kernel_idx] += self.biases[kernel_idx]
@@ -220,37 +228,67 @@ class Convolutional_Layer:
        
     # Backward pass
     def backward(self, doutput):
-        doutput_pad_v = len(self.kernels[0][0]) - 1
-        doutput_pad_h = len(self.kernels[0][0][0]) - 1
-        
-        for sample_idx in range(self.batch_size):
-            for kernel_idx in range(self.kernel_per_matrix): 
-                for channel_idx in range(self.num_channels):
-                    kernel_grad = self.correlate(self.padded_inputs[sample_idx][channel_idx], doutput[sample_idx][kernel_idx])
-                    self.dkernels[sample_idx][kernel_idx][channel_idx] = self.correlate(self.padded_inputs[sample_idx][channel_idx], doutput[sample_idx][kernel_idx])
-                self.dbiases[sample_idx][kernel_idx] = doutput[sample_idx][kernel_idx]
-        
+#         doutput_pad_v = len(self.kernels[0][0]) - 1
+#         doutput_pad_h = len(self.kernels[0][0][0]) - 1
+#         
+#         for sample_idx in range(self.batch_size):
+#             for kernel_idx in range(self.kernel_per_matrix): 
+#                 for channel_idx in range(self.num_channels):
+#                     kernel_grad = self.correlate(self.padded_inputs[sample_idx][channel_idx], doutput[sample_idx][kernel_idx])
+#                     self.dkernels[sample_idx][kernel_idx][channel_idx] = self.correlate(self.padded_inputs[sample_idx][channel_idx], doutput[sample_idx][kernel_idx])
+#                 self.dbiases[sample_idx][kernel_idx] = doutput[sample_idx][kernel_idx]
+#         
+#         self.padded_dinputs = np.zeros(self.padded_inputs.shape)
+# 
+#         for h in range(self.batch_size): 
+#             for i in range(self.num_channels): 
+#                 for j in range(self.kernel_per_matrix):
+#                     padded_doutput = self.pad(doutput[h][j], doutput_pad_h, doutput_pad_h, doutput_pad_v, doutput_pad_v, 'zero')
+#                     rotated_kernel = self.rotate(self.kernels[h][j][i])
+# 
+#                     self.padded_dinputs[h][i] += self.correlate(padded_doutput, rotated_kernel)
+#         
+#         trimmed_dinputs = []
+#         for i in range(len(self.padded_dinputs)):
+#             trimmed_dinput = []
+#             for j in range(len(self.padded_dinputs[0])): 
+#                 trimmed_dinput.append(self.unpad(self.padded_dinputs[i][j], self.padding_w_l, self.padding_w_r, self.padding_h_t, self.padding_h_b, self.padding))
+#             
+#             trimmed_dinputs.append(trimmed_dinput)
+# 
+#         self.dinputs = np.array(trimmed_dinputs)
+
         self.padded_dinputs = np.zeros(self.padded_inputs.shape)
-
-        for h in range(self.batch_size): 
-            for i in range(self.num_channels): 
-                for j in range(self.kernel_per_matrix):
-                    padded_doutput = self.pad(doutput[h][j], doutput_pad_h, doutput_pad_h, doutput_pad_v, doutput_pad_v, 'zero')
-                    rotated_kernel = self.rotate(self.kernels[h][j][i])
-
-                    self.padded_dinputs[h][i] += self.correlate(padded_doutput, rotated_kernel)
+        self.dkernels = np.zeros(self.dkernels.shape)
+        self.dbiases = np.zeros(self.dbiases.shape)
+        self.dinputs = np.zeros(self.inputs.shape)
         
-        trimmed_dinputs = []
-        for i in range(len(self.padded_dinputs)):
-            trimmed_dinput = []
-            for j in range(len(self.padded_dinputs[0])): 
-                trimmed_dinput.append(self.unpad(self.padded_dinputs[i][j], self.padding_w_l, self.padding_w_r, self.padding_h_t, self.padding_h_b, self.padding))
-            
-            trimmed_dinputs.append(trimmed_dinput)
+        for kernel_idx in range(self.kernel_per_matrix): 
+            for sample_idx in range(self.batch_size):
+                self.dbiases[kernel_idx] += doutput[sample_idx][kernel_idx]
+                for channel_idx in range(self.num_channels):
+                    ker_grad = self.correlate(self.inputs[sample_idx][channel_idx], doutput[sample_idx][kernel_idx])
+                    self.dkernels[kernel_idx][channel_idx] += ker_grad
 
-        self.dinputs = np.array(trimmed_dinputs)
+        self.dkernels = self.dkernels / self.batch_size
+        self.dbiases = self.dbiases / self.batch_size
 
+        doutput_pad_w = self.kernel_width - 1
+        doutput_pad_h = self.kernel_height - 1
 
+        for channel_idx in range(self.num_channels):
+            for kernel_idx in range(self.kernel_per_matrix):
+                for sample_idx in range(self.batch_size):
+                    padded_doutput = self.pad(doutput[sample_idx][kernel_idx], doutput_pad_h, doutput_pad_h, doutput_pad_w, doutput_pad_w, 'zero')
+                    rotated_kernel = self.rotate(self.kernels[kernel_idx][channel_idx])
+                    correlated_mat = self.correlate(padded_doutput, rotated_kernel)
+                    self.padded_dinputs[sample_idx][channel_idx] += correlated_mat
+                    self.dinputs[sample_idx][channel_idx] += self.unpad(correlated_mat, self.padding_w_l, self.padding_w_r, self.padding_h_t, self.padding_h_b, 'zero')
+
+        self.padded_dinputs = self.padded_dinputs / self.batch_size
+        self.dinputs = self.dinputs / self.batch_size
+
+        
         
     def get_parameters(self):
         return self.kernels, self.biases
@@ -267,16 +305,18 @@ class Flatten_Layer:
 
     def forward(self, inputs, training):
         self.inputs = inputs
-        self.output = inputs.flatten()
-        self.size = len(self.output)
-#         self.output = []
-# 
-#         for sample in inputs: 
-#             self.output.append(np.array(sample.flatten()))
-#         self.output = np.array(self.output)
+        self.batch_size = self.inputs.shape[0]
+        self.output = []
+
+        for sample in inputs: 
+            flattened_input = np.array(sample.flatten())
+            self.output.append(flattened_input)
+
+        self.output = np.array(self.output)
+
 
     def backward(self, doutput): 
-        self.dinputs = doutput.reshape(self.inputs.shape)
+        self.dinputs = doutput.reshape(self.inputs.shape)            
         
 
 
@@ -312,26 +352,28 @@ class Pool_Layer:
         self.pool_type = pool_type
         self.pool_w = pool_size[1]
         self.pool_h = pool_size[0]
-        self.num_sample = input_shape[0]
-        self.num_input = input_shape[1]
-        self.output_w = input_shape[3] // self.pool_w
-        self.output_h = input_shape[2] // self.pool_h
-        self.output = np.zeros((self.num_sample, self.num_input, self.output_h, self.output_w))
-        self.mul_dinputs = np.zeros(input_shape)
+        self.num_input = input_shape[0]
+        self.output_w = input_shape[2] // self.pool_w
+        self.output_h = input_shape[1] // self.pool_h
 
     def forward(self, inputs, training):
         self.inputs = inputs
-        for i in range(self.num_sample): 
-            for j in range(self.num_input): 
+        self.batch_size = self.inputs.shape[0]
+        self.mul_dinputs = np.zeros(self.inputs.shape)
+        self.output = np.zeros((self.batch_size, self.num_input, self.output_w, self.output_h))
+
+        for sample_idx in range(self.batch_size): 
+            for mat_idx in range(self.num_input): 
                 if (self.pool_type == 'max'): 
-                    self.output[i][j], self.mul_dinputs[i][j] = self.max_pooling(inputs[i][j], self.pool_w, self.pool_h)
+                    self.output[sample_idx][mat_idx], self.mul_dinputs[sample_idx][mat_idx] = \
+                        self.max_pooling(inputs[sample_idx][mat_idx], self.pool_w, self.pool_h)
 
 
     def backward(self, doutput):
         
-        self.dinputs = np.zeros((self.num_input, self.output_w * self.pool_w, self.output_h * self.pool_h))
+        self.dinputs = np.zeros((self.batch_size, self.num_input, self.output_w * self.pool_w, self.output_h * self.pool_h))
 
-        for l in range(self.num_sample):
+        for l in range(self.batch_size):
             for i in range(self.num_input):
                 for y in range(len(doutput[l][i])): 
                     for x in range(len(doutput[l][i][0])):
@@ -341,6 +383,35 @@ class Pool_Layer:
                                 x_ = x * self.pool_w + h
                                 self.dinputs[l][i][y_][x_] = self.mul_dinputs[l][i][y_][x_] * doutput[l][i][y][x]
         
+"""
+def load_mnist_dataset (dataset, path): 
+    labels = os.listdir(os.path.join(path, dataset))
+
+    X = []
+    y = []
+
+    for label in labels: 
+        for file in os.listdir(os.path.join(path, dataset,label)): 
+            image = cv.imread(os.path.join(path, dataset, label, file), cv.IMREAD_UNCHANGED)
+
+            X.append(image)
+            y.append(label)
+
+    X = np.array(X)[:128]
+    y = np.array(y).astype('uint8')[:1000]
+
+    return X,y
+
+
+
+def create_data_mnist (path): 
+    X,y = load_mnist_dataset('train', path)
+    X_test, y_test = load_mnist_dataset('test', path)
+
+    return X, y, X_test, y_test
+
+
+
 
 
 input = [
@@ -418,6 +489,37 @@ doutput = [
     ]
 ]
 
+pool_output = [
+    [
+        [
+            [0,1],
+            [1,0],
+        ],
+        [
+            [1,0],
+            [0,1],
+        ],
+        [
+            [2,2],
+            [1,1]
+        ]
+    ], 
+    [
+        [
+            [1,1],
+            [1,0],
+        ],
+        [
+            [0,0],
+            [1,1],
+        ],
+        [
+            [1,1],
+            [0,1]
+        ]
+    ], 
+]
+
 test_input = [
     [
         [
@@ -480,10 +582,39 @@ test_biases = [
             [2,1],
         ],
     ]
+
+test_dinputs = [
+    [
+        [
+            [1,2],
+            [0,1],
+        ],
+        [
+            [-2,3],
+            [4,0],
+        ],
+    ], 
+    [
+        [
+            [-1,0],
+            [0,1],
+        ],
+        [
+            [0,0],
+            [1,-1],
+        ],
+    ], 
+]
+
+test_flattened_output = np.array([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17])
+
+
 test_input = np.array(test_input)
 test_biases = np.array(test_biases)
 test_kernels = np.array(test_kernels)
-"""
+test_dinputs = np.array(test_dinputs)
+
+
 input = np.array(input)
 doutput = np.array(doutput)
 
@@ -506,9 +637,6 @@ print("Padded Input Shape: ", conv1.padded_inputs.shape)
 
 print("Output: \n", conv1.output)
 print("Output Shape: ", conv1.output.shape)
-
-# norm = Convolutional_Layer.batch_norm(input, 0.00001)
-# print("Norm: \n", norm)
 
 
 conv.backward(doutput)
@@ -536,14 +664,70 @@ flatten.forward(pool_layer.output, False)
 
 print("Flattened output: \n", flatten.output)
 print("Flattened output Shape: ", flatten.output.shape)
-"""
+
 
 
 conv2 = Convolutional_Layer(test_input[0].shape, (2,2), kernel_per_matrix=2,padding='valid')
-conv2.kernels = test_kernels
-conv2.biases = test_biases
+conv2.set_parameters(test_kernels, test_biases)
 conv2.forward(test_input, False)
+
+conv2.backward(test_dinputs)
+
+print("Test kernel gradients: \n", conv2.dkernels)
+print("Test bias gradients: \n", conv2.dbiases)
+print("Test padded input gradients: \n", conv2.padded_dinputs)
+print("Test input gradients: \n", conv2.dinputs)
+
+pool = Pool_Layer(input[0].shape, 'max', (2,2))
+pool.forward(input, False)
+pool.backward(pool_output)
+
+print("Pool Layer: \n")
+print("Pool input: \n", pool.inputs)
+print("Pool output: \n", pool.output)
+print("Pool grad helper: \n", pool.mul_dinputs)
+print("Pool dinput: \n", pool.dinputs)
+
+flatten = Flatten_Layer()
+flatten.forward(test_input, False)
+flatten.backward(test_flattened_output)
+
+print("Flatten Layer")
+print("Flatten output: \n", flatten.output)
+print("Flatten dinput: \n", flatten.dinputs)
+
 
 print("Forward output: \n", conv2.output)
 
+
+
+X, y, X_test, y_test = create_data_mnist('fashion_mnist_images')
+
+
+keys = np.array(range(X.shape[0]))
+np.random.shuffle(keys)
+
+X = X[keys]
+y = y[keys]
+
+X = (X - 127.5) / 127.5
+X_test = (X_test - 127.5) / 127.5
+
+X = np.array([X[i].reshape((1,28,28)) for i in range(len(X))])
+X_test = np.array([X_test[i].reshape((1,28,28)) for i in range(len(X_test))])
+
+print("\nX shape: ", X.shape)
+
+conv3 = Convolutional_Layer(X[0].shape, (3,3), kernel_per_matrix=20,padding='zero')
+pool3 = Pool_Layer((20,28,28), 'max', (4,4))
+flatten3 = Flatten_Layer()
+
+conv3.forward(X, True)
+pool3.forward(conv3.output, True)
+flatten3.forward(pool3.output, True)
+
+print("Flatten Output: ", flatten3.output.shape)
+
+
+"""
 

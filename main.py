@@ -77,8 +77,6 @@ class Layer_Dense:
         self.dinputs = np.dot(dvalues, self.weights.T)
 
 
-
-
     def get_parameters(self):
         return self.weights, self.biases
 
@@ -415,8 +413,6 @@ class Loss:
 
     # Calculate the data and regularization losses given model output and ground truth values
     def calculate(self, output, y, *, include_regularization=False): 
-        # if (len(y.shape) == 1): 
-        #     num_labels = output.shape[]
         
         # Calculate sample losses
         sample_losses = self.forward(output,y)
@@ -455,12 +451,6 @@ class Loss_CategoricalCrossentropy(Loss):
     def forward(self, y_pred, y_true): # y_pred: values from neural network, y_true: values from training values
         samples = len(y_pred)
         y_pred_clipped = np.clip(y_pred, 1e-7, 1 - 1e-7)
-        print(y_pred)
-        print(y_true.shape)
-        print(y_true)
-        print(y_pred_clipped.shape)
-        print(y_pred_clipped[0])
-
 
         if len(y_true.shape) == 1:
             correct_confidences = y_pred_clipped[range(samples), y_true]
@@ -564,7 +554,10 @@ class Loss_MeanAbsoluteError(Loss):
 
 # Accuracy 
 class Accuracy: 
-    def calculate(self, predictions, y): 
+    def calculate(self, predictions, y):
+
+        # print("Predictions: \n", predictions)
+        # print("Y: \n", y)
         
         comparisons = self.compare(predictions, y) 
         
@@ -699,7 +692,7 @@ class Model:
             self.loss.new_pass()
             self.accuracy.new_pass()
 
-            for step in range(train_steps): 
+            for step in range(train_steps):
 
                 if batch_size is None: 
                     batch_X = X
@@ -708,14 +701,19 @@ class Model:
                     batch_X = X[step*batch_size: (step+1)*batch_size]
                     batch_y = y[step*batch_size: (step+1)*batch_size]
                 
-                output, output_full = self.forward(batch_X, training=True)
+                output = self.forward(batch_X, training=True)
+                
+                # print("Output of forward: \n", output)
 
-                data_loss, regularization_loss = self.loss.calculate(output_full, batch_y, include_regularization=True)
+                data_loss, regularization_loss = self.loss.calculate(output, batch_y, include_regularization=True)
     
                 loss = data_loss + regularization_loss
 
-                predictions = self.output_layer_activation.predictions(output_full)
-                accuracy = self.accuracy.calculate(output, batch_y)
+                predictions = self.output_layer_activation.predictions(output)
+
+                # print("Predictions: \n", predictions )
+                
+                accuracy = self.accuracy.calculate(predictions, batch_y)
         
                 self.backward(output, batch_y)
 
@@ -724,8 +722,8 @@ class Model:
                     self.optimizer.update_params(layer)
                 self.optimizer.post_update_params()
 
-                if not step % print_every or step == train_steps - 1: 
-                    print(  f'step: {step}, ' + 
+                #if not step % print_every or step == train_steps - 1: 
+                print(  f'step: {step}, ' + 
                             f'acc: {accuracy:.3f}, ' + 
                             f'loss: {loss:.3f}, ' +
                             f'data_loss: {data_loss:.3f}, ' + 
@@ -783,19 +781,19 @@ class Model:
 
 
     def forward(self, X, training):
-        if (len(X.shape) == 4):
-            y_return = []
-            y_full = []
-
-            for X_ in X: 
-                self.input_layer.forward(X_, training)
-
-                for layer in self.layers: 
-                    layer.forward(layer.prev.output, training)
-                y_return.append(np.argmax(layer.output))
-                y_full.append(layer.output)
-
-            return np.array(y_return), np.array(y_full)
+#         if (len(X.shape) == 4):
+#             y_return = []
+#             y_full = []
+# 
+#             for X_ in X: 
+#                 self.input_layer.forward(X_, training)
+# 
+#                 for layer in self.layers: 
+#                     layer.forward(layer.prev.output, training)
+#                 y_return.append(np.argmax(layer.output))
+#                 y_full.append(layer.output)
+# 
+#             return np.array(y_return), np.array(y_full)
         
 
         self.input_layer.forward(X, training)
@@ -965,10 +963,10 @@ model.set(
 #####
 """
 
-model.add(Convolutional_Layer(X[0].shape, (5,5), kernel_per_matrix=2, stride=1, padding='valid'))
+model.add(Convolutional_Layer(X[0].shape, (5,5), kernel_per_matrix=10, stride=1, padding='valid'))
 model.add(Activation_ReLU())
-model.add(Pool_Layer((2,24,24), 'max', (4,4)))
-model.add(Convolutional_Layer((2,6,6), (3,3), kernel_per_matrix=1, stride=1, padding='valid'))
+model.add(Pool_Layer((10,24,24), 'max', (3,3)))
+model.add(Convolutional_Layer((10,8,8), (5,5), kernel_per_matrix=1, stride=1, padding='valid'))
 model.add(Activation_ReLU())
 model.add(Flatten_Layer())
 model.add(Layer_Dense(16, 10))
