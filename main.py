@@ -556,9 +556,6 @@ class Loss_MeanAbsoluteError(Loss):
 class Accuracy: 
     def calculate(self, predictions, y):
 
-        # print("Predictions: \n", predictions)
-        # print("Y: \n", y)
-        
         comparisons = self.compare(predictions, y) 
         
         accuracy = np.mean(comparisons)
@@ -923,6 +920,89 @@ def create_data_mnist (path):
 
 
 
+def load_cifar_dataset (path): 
+    
+    batches = os.listdir(path)
+
+    X = []
+    y = []
+   
+    for batch in batches:
+
+        path_batch = os.path.join(path,batch)
+
+        labels = os.listdir(path_batch)
+
+
+        for label in labels: 
+            for file in os.listdir(os.path.join(path_batch, label)): 
+                image = cv.imread(os.path.join(path_batch, label, file), cv.IMREAD_COLOR)
+
+                X.append(image)
+                y.append(label)
+
+    X = np.array(X)
+    y = np.array(y).astype('uint8')
+    
+    keys = np.array(range(X.shape[0]))
+    np.random.shuffle(keys)
+
+    X = X[keys]
+    y = y[keys]
+
+    X = (X - 127.5) / 127.5
+
+    X_ = []
+
+    for x in X: 
+        X_.append(np.transpose(x, (2,0,1)))
+
+    X = np.array(X_)
+    
+    length = X.shape[0] * 9 // 10
+
+    X_test = X[length:]
+    y_test = y[length:]
+    X = X[:length]
+    y = y[:length]
+    
+    return X, y, X_test, y_test
+
+
+
+X, y, X_test, y_test = load_cifar_dataset('cifar-10-images/')
+
+
+model = Model()
+
+
+model.add(Convolutional_Layer(X[0].shape, (5,5), kernel_per_matrix=1, stride=1, padding='valid'))
+model.add(Activation_ReLU())
+model.add(Pool_Layer((1,28,28), 'max', (2,2)))
+model.add(Convolutional_Layer((1,14,14), (5,5), kernel_per_matrix=2, stride=1, padding='valid'))
+model.add(Activation_ReLU())
+model.add(Flatten_Layer())
+model.add(Layer_Dense(200, 10))
+model.add(Activation_Softmax())
+
+model.set(
+        loss=Loss_CategoricalCrossentropy(),
+        optimizer=Optimizer_Adam(decay=1e-4),
+        accuracy=Accuracy_Categorical()
+    )
+
+
+
+model.finalize()
+
+model.train(X,y,validation_data=(X_test, y_test), epochs=10, batch_size=128, print_every=100)
+
+model.save('fashion_mnist_conv.parms')
+
+fashion_mnist_labels = ['T-shirt', 'Trousers', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle Boot']
+
+
+"""
 
 X, y, X_test, y_test = create_data_mnist('fashion_mnist_images')
 
@@ -932,10 +1012,6 @@ np.random.shuffle(keys)
 
 X = X[keys]
 y = y[keys]
-"""
-X = (X.reshape(X.shape[0], -1).astype(np.float32) - 127.5) / 127.5
-X_test = (X_test.reshape(X_test.shape[0], -1).astype(np.float32) - 127.5) / 127.5
-"""
 
 X = (X - 127.5) / 127.5
 X_test = (X_test - 127.5) / 127.5
@@ -945,6 +1021,8 @@ X_test = np.array([X_test[i].reshape((1,28,28)) for i in range(len(X_test))])
 
 
 model = Model()
+
+"""
 """
 
 ##### FULLY CONNECTED EXAMPLE
@@ -962,29 +1040,23 @@ model.set(
     )
 #####
 """
-
-model.add(Convolutional_Layer(X[0].shape, (5,5), kernel_per_matrix=10, stride=1, padding='valid'))
-model.add(Activation_ReLU())
-model.add(Pool_Layer((10,24,24), 'max', (3,3)))
-model.add(Convolutional_Layer((10,8,8), (5,5), kernel_per_matrix=1, stride=1, padding='valid'))
-model.add(Activation_ReLU())
-model.add(Flatten_Layer())
-model.add(Layer_Dense(16, 10))
-model.add(Activation_Softmax())
-
-model.set(
-        loss=Loss_CategoricalCrossentropy(),
-        optimizer=Optimizer_Adam(decay=1e-4),
-        accuracy=Accuracy_Categorical()
-    )
-
-
-
-model.finalize()
-
-model.train(X,y,validation_data=(X_test, y_test), epochs=10, batch_size=128, print_every=100)
-
 """
+
+image_data = cv.imread("/Users/macos/neuralnetworkfromscratch/fashion_mnist_images/test/1/0012.png", cv.IMREAD_COLOR)
+
+image_data = cv.resize(image_data, (28,28))
+
+image_data = (image_data.reshape(1,-1).astype(np.float32) -127.5) / 127.5
+
+predictions = model_load.predict(image_data)
+
+predictions = model_load.output_layer_activation.predictions(predictions)
+
+prediction = fashion_mnist_labels[predictions[0]]
+
+print(prediction)
+
+
 # model.load_parameters('fashion_mnist.parms')
 
 # model.evaluate(X_test, y_test)
